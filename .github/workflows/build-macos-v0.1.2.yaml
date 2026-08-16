@@ -1,0 +1,103 @@
+name: Empacotar Eldoria para macOS a partir da CDN
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_url:
+        description: URL CDN do ZIP de source
+        required: false
+        default: https://files.manuscdn.com/user_upload_by_module/session_file/310419663029620662/RTiDhCaJCmuUwHYj.zip
+        type: string
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build-pkg:
+    name: Compilar Eldoria macOS 10.13+ Intel
+    runs-on: macos-15-intel
+
+    env:
+      DEFAULT_SOURCE_URL: https://files.manuscdn.com/user_upload_by_module/session_file/310419663029620662/RTiDhCaJCmuUwHYj.zip
+      SOURCE_SHA256: b903cccf5f30ae5565f87a08795848df0af59a51d57bffadc80ddc916254ff35
+      MACOSX_DEPLOYMENT_TARGET: "10.13"
+
+    steps:
+      - name: Baixar, validar e descompactar o source da CDN
+        id: unpack
+        shell: bash
+        env:
+          REQUESTED_SOURCE_URL: ${{ inputs.source_url }}
+        run: |
+          set -euo pipefail
+
+          SOURCE_URL="${REQUESTED_SOURCE_URL:-$DEFAULT_SOURCE_URL}"
+          SOURCE_ZIP="$RUNNER_TEMP/Eldoria-Source-Complete.zip"
+          SOURCE_DIR="$RUNNER_TEMP/eldoria-source"
+
+          curl --fail --location --show-error --silent \
+            --retry 5 \
+            --retry-delay 5 \
+            --output "$SOURCE_ZIP" \
+            "$SOURCE_URL"
+
+          echo "$SOURCE_SHA256  $SOURCE_ZIP" | shasum -a 256 -c -
+
+          rm -rf "$SOURCE_DIR"
+          mkdir -p "$SOURCE_DIR"
+          ditto -x -k "$SOURCE_ZIP" "$SOURCE_DIR"
+
+          BUILD_SCRIPT="$(find "$SOURCE_DIR" \
+            -type f \
+            -path '*/packaging/macos/build-macos-10.13.sh' \
+            -print -quit )"
+
+          if [[ -z "$BUILD_SCRIPT" ]]; then
+            echo "Erro: build-macos-10.13.sh não foi encontrado no ZIP." >&2
+            exit 1
+          fi
+
+          GAME_DIR="$(cd "$(dirname "$BUILD_SCRIPT")/../.." && pwd)"
+          echo "game_dir=$GAME_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Compilar Eldoria e criar o instalador PKG
+        id: build
+        shell: bash
+        working-directory: ${{ steps.unpack.outputs.game_dir }}
+        run: |
+          set -euo pipefail
+
+          chmod +x \
+            packaging/macos/build-macos-10.13.sh \
+            packaging/macos/build-pkg.sh
+
+          ./packaging/macos/build-macos-10.13.sh --pkg
+
+          PKG_PATH="$PWD/dist/macos/Eldoria-macOS-10.13.pkg"
+
+          if [[ ! -f "$PKG_PATH" ]]; then
+            echo "Erro: o instalador PKG não foi criado em: $PKG_PATH" >&2
+            find "$PWD/dist" -maxdepth 4 -type f -print || true
+            exit 1
+          fi
+
+          file "$PKG_PATH"
+          shasum -a 256 "$PKG_PATH" > "$PKG_PATH.sha256"
+
+          echo "pkg_path=$PKG_PATH" >> "$GITHUB_OUTPUT"
+          echo "sha_path=$PKG_PATH.sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Publicar o instalador como artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eldoria-macOS-10.13-pkg-${{ github.run_number }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            ${{ steps.build.outputs.pkg_path }}
+            ${{ steps.build.outputs.sha_path }}
