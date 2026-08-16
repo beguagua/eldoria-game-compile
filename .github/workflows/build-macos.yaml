@@ -11,13 +11,13 @@ permissions:
 
 jobs:
   build-macos-pkg:
-    # macos-latest é utilizado conforme solicitado.
-    # O script força a arquitetura x86_64 para o iMac 2011.
-    runs-on: macos-latest
+    name: Compilar Eldoria macOS 10.13+ Intel
+    # Intel é necessário porque o pacote será destinado ao iMac 2011.
+    runs-on: macos-15-intel
 
     env:
-      SOURCE_URL: https://files.manuscdn.com/user_upload_by_module/session_file/310419663029620662/wswDbHpyEdMDJdkA.zip
-      SOURCE_SHA256: 1bffa22cdf6af1f85d250132f2eb79492f21f10a7b9aaca295fcf1ef38bc8264
+      SOURCE_URL: https://files.manuscdn.com/user_upload_by_module/session_file/310419663029620662/odnNufstxYplwKni.zip
+      SOURCE_SHA256: f85c3e0248fbd084e8e60050ffa018837d93082e5f097572d717145dbeab3f72
       MACOSX_DEPLOYMENT_TARGET: "10.13"
 
     steps:
@@ -27,7 +27,7 @@ jobs:
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/download" "$GITHUB_WORKSPACE/source"
 
-      - name: Baixar source da CDN
+      - name: Baixar source corrigido da CDN
         shell: bash
         run: |
           set -euo pipefail
@@ -37,12 +37,12 @@ jobs:
             --output "$GITHUB_WORKSPACE/download/Eldoria-Source-Complete.zip" \
             "$SOURCE_URL"
 
-      - name: Validar integridade do ZIP
+      - name: Validar SHA-256 do source
         shell: bash
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/download"
-          echo "$SOURCE_SHA256  Eldoria-Source-Complete.zip" | shasum --algorithm 256 --check
+          echo "$SOURCE_SHA256  Eldoria-Source-Complete.zip" | shasum -a 256 -c -
 
       - name: Extrair source
         shell: bash
@@ -52,7 +52,7 @@ jobs:
             "$GITHUB_WORKSPACE/download/Eldoria-Source-Complete.zip" \
             -d "$GITHUB_WORKSPACE/source"
 
-      - name: Localizar script de build macOS
+      - name: Localizar script de compilação
         shell: bash
         run: |
           set -euo pipefail
@@ -63,21 +63,23 @@ jobs:
             -print -quit )"
 
           if [[ -z "$BUILD_SCRIPT" ]]; then
-            echo "Erro: build-macos-10.13.sh não foi encontrado no ZIP." >&2
+            echo "Erro: script build-macos-10.13.sh não encontrado no ZIP." >&2
             exit 1
           fi
 
           NATIVE_ROOT="${BUILD_SCRIPT%/packaging/macos/build-macos-10.13.sh}"
 
+          chmod +x \
+            "$BUILD_SCRIPT" \
+            "$NATIVE_ROOT/packaging/macos/build-pkg.sh"
+
           echo "BUILD_SCRIPT=$BUILD_SCRIPT" >> "$GITHUB_ENV"
           echo "NATIVE_ROOT=$NATIVE_ROOT" >> "$GITHUB_ENV"
 
-          chmod +x "$BUILD_SCRIPT"
+          echo "Script: $BUILD_SCRIPT"
+          echo "Diretório native: $NATIVE_ROOT"
 
-          echo "Script encontrado em: $BUILD_SCRIPT"
-          echo "Raiz native encontrada em: $NATIVE_ROOT"
-
-      - name: Compilar Eldoria e criar PKG
+      - name: Compilar raylib, Eldoria e criar PKG
         shell: bash
         run: |
           set -euo pipefail
@@ -91,16 +93,17 @@ jobs:
           PKG_PATH="$NATIVE_ROOT/dist/macos/Eldoria-macOS-10.13.pkg"
 
           if [[ ! -f "$PKG_PATH" ]]; then
-            echo "Erro: o instalador PKG não foi criado em: $PKG_PATH" >&2
+            echo "Erro: o instalador PKG não foi criado." >&2
             find "$NATIVE_ROOT/dist" -maxdepth 4 -type f -print 2>/dev/null || true
             exit 1
           fi
 
           file "$PKG_PATH"
-          shasum --algorithm 256 "$PKG_PATH" | tee "$PKG_PATH.sha256"
+          shasum -a 256 "$PKG_PATH" | tee "$PKG_PATH.sha256"
+
           echo "PKG_PATH=$PKG_PATH" >> "$GITHUB_ENV"
 
-      - name: Publicar instalador como artefato
+      - name: Publicar PKG como artefato
         uses: actions/upload-artifact@v4
         with:
           name: Eldoria-macOS-10.13-pkg
