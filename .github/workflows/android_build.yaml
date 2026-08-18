@@ -1,0 +1,140 @@
+name: Build Eldoria Android
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_url:
+        description: URL CDN do ZIP Android
+        required: false
+        default: https://files.manuscdn.com/user_upload_by_module/session_file/310419663029620662/27adbeb5.zip
+        type: string
+  push:
+    branches:
+      - main
+    paths:
+      - "**"
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: APK e AAB Android
+    runs-on: ubuntu-latest
+
+    env:
+      DEFAULT_SOURCE_URL: https://files.manuscdn.com/user_upload_by_module/session_file/310419663029620662/27adbeb5.zip
+      SOURCE_SHA256: 4822e9b863e2ab35582a826af2b608eefb5df5efd7ecfff860d7d0f0b6447902
+      ANDROID_NDK_VERSION: 26.3.11579264
+
+    steps:
+      - name: Baixar e extrair o source Android da CDN
+        id: source
+        shell: bash
+        env:
+          REQUESTED_SOURCE_URL: ${{ inputs.source_url }}
+        run: |
+          set -euo pipefail
+
+          SOURCE_URL="${REQUESTED_SOURCE_URL:-$DEFAULT_SOURCE_URL}"
+          SOURCE_ZIP="$RUNNER_TEMP/Eldoria-Source-Android.zip"
+          SOURCE_DIR="$RUNNER_TEMP/eldoria-source"
+
+          curl --fail --location --show-error --silent \
+            --retry 5 \
+            --retry-delay 5 \
+            --output "$SOURCE_ZIP" \
+            "$SOURCE_URL"
+
+          echo "$SOURCE_SHA256  $SOURCE_ZIP" | sha256sum --check --strict
+
+          rm -rf "$SOURCE_DIR"
+          mkdir -p "$SOURCE_DIR"
+          unzip -q "$SOURCE_ZIP" -d "$SOURCE_DIR"
+
+          SETTINGS_FILE="$(find "$SOURCE_DIR" \
+            -type f \
+            -path '*/native/android/settings.gradle' \
+            -print -quit )"
+
+          if [[ -z "$SETTINGS_FILE" ]]; then
+            echo "Erro: native/android/settings.gradle não foi encontrado no source extraído." >&2
+            find "$SOURCE_DIR" -maxdepth 8 -type f -name settings.gradle -print >&2 || true
+            exit 1
+          fi
+
+          ANDROID_DIR="$(dirname "$SETTINGS_FILE")"
+
+          test -f "$ANDROID_DIR/app/build.gradle"
+          test -f "$ANDROID_DIR/app/src/main/cpp/CMakeLists.txt"
+
+          echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
+          echo "Projeto Android encontrado em: $ANDROID_DIR"
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar SDK, NDK e CMake
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          yes | sdkmanager --licenses >/dev/null || true
+
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "cmake;3.22.1" \
+            "ndk;${ANDROID_NDK_VERSION}"
+
+      - name: Configurar Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Gerar APK e AAB
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -d "$ANDROID_DIR"
+
+          gradle --no-daemon \
+            --project-dir "$ANDROID_DIR" \
+            clean assembleRelease bundleRelease \
+            -Pandroid.ndkVersion="$ANDROID_NDK_VERSION"
+
+      - name: Verificar APK e AAB
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK="$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk"
+          AAB="$ANDROID_DIR/app/build/outputs/bundle/release/app-release.aab"
+
+          test -f "$APK"
+          test -f "$AAB"
+
+          sha256sum "$APK" "$AAB" | tee "$RUNNER_TEMP/android-artifacts.sha256"
+
+          echo "APK criado: $APK"
+          echo "AAB criado: $AAB"
+
+      - name: Publicar APK, AAB e hashes
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eldoria-Android-${{ github.run_number }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            ${{ env.ANDROID_DIR }}/app/build/outputs/apk/release/app-release.apk
+            ${{ env.ANDROID_DIR }}/app/build/outputs/bundle/release/app-release.aab
+            ${{ runner.temp }}/android-artifacts.sha256
+            
