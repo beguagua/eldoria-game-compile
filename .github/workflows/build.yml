@@ -1,0 +1,60 @@
+name: Eldoria Build
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install .NET 8 SDK for build tooling
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Install legacy .NET Core 3.1 runtime/SDK if available
+        shell: pwsh
+        run: |
+          Write-Host 'The project targets .NET Core 3.1 for the legacy macOS target.'
+      - name: Build Windows
+        run: dotnet publish Eldoria/Eldoria.csproj -c Release -r win-x64 --self-contained true -o build/windows
+      - name: Zip Windows
+        shell: pwsh
+        run: Compress-Archive -Path build/windows/* -DestinationPath Eldoria-Windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Eldoria-Windows
+          path: Eldoria-Windows.zip
+
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package source code
+        run: zip -r Eldoria-Source.zip Eldoria .github
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Eldoria-Source
+          path: Eldoria-Source.zip
+
+  macos-legacy:
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install .NET 3.1 SDK
+        run: |
+          curl -L https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh
+          chmod +x dotnet-install.sh
+          ./dotnet-install.sh --version 3.1.426 --install-dir "$HOME/.dotnet31"
+          echo "$HOME/.dotnet31" >> "$GITHUB_PATH"
+          echo "DOTNET_ROOT=$HOME/.dotnet31" >> "$GITHUB_ENV"
+      - name: Build macOS x64
+        run: dotnet publish Eldoria/Eldoria.csproj -c Release -r osx-x64 --self-contained true -o build/macos
+      - name: Zip macOS
+        run: cd build/macos && zip -r ../../Eldoria-macOS-x64.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Eldoria-macOS-legacy
+          path: Eldoria-macOS-x64.zip
