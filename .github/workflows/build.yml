@@ -43,10 +43,10 @@ jobs:
           dotnet-version: '3.1.x'
       - name: Build macOS Intel
         run: dotnet publish Eldoria/Eldoria.csproj -c Release -r osx-x64 --self-contained true -o build/macos
-      - name: Create portable app
+      - name: Create portable app bundle
         run: |
           mkdir -p Eldoria.app/Contents/MacOS Eldoria.app/Contents/Resources
-          cp build/macos/Eldoria Eldoria.app/Contents/MacOS/Eldoria
+          cp -R build/macos/* Eldoria.app/Contents/MacOS/
           chmod +x Eldoria.app/Contents/MacOS/Eldoria
           cat > Eldoria.app/Contents/Info.plist <<'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
@@ -63,7 +63,7 @@ jobs:
       - name: Create portable macOS ZIP
         run: zip -r Eldoria-macOS-10.13-Portable.zip Eldoria.app
       - name: Create macOS installer package
-        run: pkgbuild --root Eldoria.app --identifier com.eldoria.game --version 0.1.0 Eldoria-macOS-10.13-Installer.pkg
+        run: pkgbuild --component Eldoria.app --install-location /Applications --identifier com.eldoria.game --version 0.1.0 Eldoria-macOS-10.13-Installer.pkg
       - name: Upload macOS packages
         uses: actions/upload-artifact@v4
         with:
