@@ -1,0 +1,11 @@
+<resources>
+    <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowBackground">@drawable/launch_screen</item>
+        <item name="android:windowDisablePreview">false</item>
+        <item name="android:colorAccent">#5DB7BE</item>
+        <item name="android:navigationBarColor">#081119</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>
