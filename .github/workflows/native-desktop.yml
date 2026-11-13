@@ -1,0 +1,136 @@
+name: Eldoria Native Desktop 0.1.5
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'native/**'
+      - '.github/workflows/native-desktop.yml'
+  pull_request:
+    paths:
+      - 'native/**'
+      - '.github/workflows/native-desktop.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  linux-check:
+    name: Linux compile check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake libgl1-mesa-dev libx11-dev libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev libwayland-dev libasound2-dev
+      - name: Configure and build
+        working-directory: native
+        run: cmake -S . -B build/linux -DCMAKE_BUILD_TYPE=Release && cmake --build build/linux --parallel 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Eldoria-native-linux-x86_64
+          path: native/build/linux/bin/eldoria
+
+  windows-cross:
+    name: Windows ${{ matrix.arch }} cross-build
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            compiler: x86_64-w64-mingw32-gcc
+            cxx: x86_64-w64-mingw32-g++
+            rc: x86_64-w64-mingw32-windres
+            packages: gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 binutils-mingw-w64-x86-64
+          - arch: i686
+            compiler: i686-w64-mingw32-gcc
+            cxx: i686-w64-mingw32-g++
+            rc: i686-w64-mingw32-windres
+            packages: gcc-mingw-w64-i686 g++-mingw-w64-i686 binutils-mingw-w64-i686
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install MinGW toolchain
+        run: sudo apt-get update && sudo apt-get install -y cmake zip ${{ matrix.packages }}
+      - name: Configure and build
+        working-directory: native
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          cmake -S . -B build/windows-${{ matrix.arch }} \
+            -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_C_COMPILER=${{ matrix.compiler }} \
+            -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} \
+            -DCMAKE_RC_COMPILER=${{ matrix.rc }} \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_FLAGS='-DWINVER=0x0601 -D_WIN32_WINNT=0x0601'
+          cmake --build build/windows-${{ matrix.arch }} --parallel 2
+          mkdir -p dist/windows-${{ matrix.arch }}/assets
+          cp build/windows-${{ matrix.arch }}/bin/eldoria.exe dist/windows-${{ matrix.arch }}/Eldoria.exe
+          cp -R assets/. dist/windows-${{ matrix.arch }}/assets/
+          printf 'Eldoria nativo 0.1.5 para Windows ${{ matrix.arch }}.\nWindows 7 é o mínimo pretendido para este perfil; validar em máquina real.\n' > dist/windows-${{ matrix.arch }}/LEIA-ME.txt
+          (cd dist && zip -qr Eldoria-Windows-${{ matrix.arch }}.zip windows-${{ matrix.arch }})
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Eldoria-native-windows-${{ matrix.arch }}
+          path: native/dist/Eldoria-Windows-${{ matrix.arch }}.zip
+
+  macos:
+    name: macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: macos-13
+            deployment: '10.13'
+          - arch: arm64
+            # O plano atual não oferece runner macOS ARM; o Clang/Xcode Intel
+            # consegue cross-compilar para Apple Silicon usando o SDK instalado.
+            runner: macos-13
+            deployment: '11.0'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure and build
+        working-directory: native
+        env:
+          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.deployment }}
+        run: |
+          cmake -S . -B build/macos-${{ matrix.arch }} \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=${{ matrix.deployment }}
+          cmake --build build/macos-${{ matrix.arch }} --parallel 2
+          mkdir -p dist/macos-${{ matrix.arch }}/Eldoria.app/Contents/MacOS dist/macos-${{ matrix.arch }}/Eldoria.app/Contents/Resources
+          cp build/macos-${{ matrix.arch }}/bin/eldoria dist/macos-${{ matrix.arch }}/Eldoria.app/Contents/MacOS/Eldoria
+          cp -R assets/. dist/macos-${{ matrix.arch }}/Eldoria.app/Contents/Resources/assets/
+          cat > dist/macos-${{ matrix.arch }}/Eldoria.app/Contents/Info.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>CFBundleExecutable</key><string>Eldoria</string>
+          <key>CFBundleIdentifier</key><string>com.eldoria.game</string>
+          <key>CFBundleName</key><string>Eldoria</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          <key>CFBundleShortVersionString</key><string>0.1.5</string>
+          <key>LSMinimumSystemVersion</key><string>${{ matrix.deployment }}</string>
+          </dict></plist>
+          PLIST
+          chmod +x dist/macos-${{ matrix.arch }}/Eldoria.app/Contents/MacOS/Eldoria
+          (cd dist && ditto -c -k --sequesterRsrc --keepParent macos-${{ matrix.arch }}/Eldoria.app Eldoria-macOS-${{ matrix.arch }}.zip)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Eldoria-native-macos-${{ matrix.arch }}
+          path: native/dist/Eldoria-macOS-${{ matrix.arch }}.zip
+
+  compatibility-notes:
+    name: Legacy compatibility notes
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish unsupported-target report
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eldoria-legacy-compatibility-report
+          path: native/BUGS.md

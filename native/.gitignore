@@ -1,0 +1,10 @@
+build/
+obj/
+bin/
+dist/
+*.user
+eldoria_save.dat
+eldoria_settings.cfg
+eldoria_imported_shader.fs
+external/raylib-5.5/src/*.a
+external/raylib-5.5/src/*.o
