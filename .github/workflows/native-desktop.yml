@@ -42,16 +42,16 @@ jobs:
             compiler: x86_64-w64-mingw32-gcc
             cxx: x86_64-w64-mingw32-g++
             rc: x86_64-w64-mingw32-windres
-            package: gcc-mingw-w64-x86-64
+            packages: gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 binutils-mingw-w64-x86-64
           - arch: i686
             compiler: i686-w64-mingw32-gcc
             cxx: i686-w64-mingw32-g++
             rc: i686-w64-mingw32-windres
-            package: gcc-mingw-w64-i686
+            packages: gcc-mingw-w64-i686 g++-mingw-w64-i686 binutils-mingw-w64-i686
     steps:
       - uses: actions/checkout@v4
       - name: Install MinGW toolchain
-        run: sudo apt-get update && sudo apt-get install -y cmake zip ${{ matrix.package }}
+        run: sudo apt-get update && sudo apt-get install -y cmake zip ${{ matrix.packages }}
       - name: Configure and build
         working-directory: native
         env:
