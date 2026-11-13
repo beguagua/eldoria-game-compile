@@ -7,6 +7,10 @@ on:
     paths:
       - 'native/**'
       - '.github/workflows/native-desktop.yml'
+  pull_request:
+    paths:
+      - 'native/**'
+      - '.github/workflows/native-desktop.yml'
 
 permissions:
   contents: read
