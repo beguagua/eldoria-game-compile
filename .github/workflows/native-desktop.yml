@@ -86,7 +86,9 @@ jobs:
             runner: macos-13
             deployment: '10.13'
           - arch: arm64
-            runner: macos-14
+            # O plano atual não oferece runner macOS ARM; o Clang/Xcode Intel
+            # consegue cross-compilar para Apple Silicon usando o SDK instalado.
+            runner: macos-13
             deployment: '11.0'
     steps:
       - uses: actions/checkout@v4
